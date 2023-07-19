@@ -1,0 +1,29 @@
+#!/bin/bash
+#SBATCH -A m1657
+#SBATCH -J OBS
+#SBATCH -t 00:15:00
+#SBATCH -q debug
+#SBATCH -C cpu
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=128
+#SBATCH --exclusive
+#SBATCH --output=log_rainrate_OBS.log
+##SBATCH --mail-type=END
+##SBATCH --mail-user=zhe.feng@pnnl.gov
+
+date
+config='/global/homes/f/feng045/program/iclass/re2/amazon_hvmixing/config_imerg_mcs_tbpf_amazon.yml'
+start_datetime='2014-04-02T00:00:00'
+end_datetime='2014-04-30T00:00:00'
+landfrac_range=(0.0 10.0)
+oceanfrac_range=(99.0 100.0)
+# extent: lonmin lonmax latmin latmax
+# extent=(-79.0 -36.0 -18.0 11.0)
+extent=(-70.0 -47.0 -10.0 2.0)
+region='central_amazon'
+# Rain rate histogram code full path
+codename='/global/homes/f/feng045/program/PyFLEXTRKR-dev/Analysis/calc_mcs_rainrate_hist_byregion.py'
+
+source activate pyflex
+python ${codename} -c ${config} -l ${landfrac_range[@]} -o ${oceanfrac_range[@]} --extent ${extent[@]} -s ${start_datetime} -e ${end_datetime} --region ${region}
+date

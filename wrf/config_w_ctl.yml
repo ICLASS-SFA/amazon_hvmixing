@@ -1,0 +1,38 @@
+---
+track_period: '20140401.0000_20140430.0000'
+# Raw wrfout directory
+wrfout_dir: "/pscratch/sd/s/smhagos/HVMIXINGSC/SIMULATIONS/CONTROLRUN/RAW/"
+# 3D data directory
+data_dir: "/pscratch/sd/s/smhagos/HVMIXINGSC/SIMULATIONS/regridded/CONTROLRUN/"
+# MCS mask data directory
+mcsmask_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/CONTROLRUN/TRACK_DIR_REGRID/mcstracking_native/"
+# MCS track statistics file
+mcsstats_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/CONTROLRUN/TRACK_DIR_REGRID/stats/"
+# Output file directory
+output_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/CONTROLRUN/TRACK_DIR_REGRID/stats/"
+# Environmental file directory
+# envs_dir: "/pscratch/sd/f/feng045/HyperFACETS/sgp_flood/wrf_ext/ctl/envs/"
+# MCS track statistics file basename
+statsfile_basename: "mcs_tracks_final_"
+mcsmask_basename: "mcstrack_"
+data_basename: "wrfreg_W_LH_"
+wrfout_basename: "wrfout_d01_"
+outputfile_basename: "mcs_tracks_"
+# W threshold to define updraft/downdraft core
+W_up_thresh: 2.0  # [m/s]
+W_down_thresh: -1.0  # [m/s]
+# QCLOUD threshold to define cloudy
+Q_up_thresh: 0.00001  # [kg/kg]
+# Window to perform Gaussian smoothing to W before defining updraft core
+# gaussian_sigma: [0,1,1]    # [z,y,x] dimension
+# Number of maximum updraft cores to save
+# nmax_core: 10
+# Minimum pixel count for a core
+min_core_npix: 4
+# Number of cores to save per MCS
+ncores_min: 5
+# Dask workers and threads
+run_parallel: 1
+n_workers: 64
+threads_per_worker: 1
+dask_tmp_dir: '/tmp'
