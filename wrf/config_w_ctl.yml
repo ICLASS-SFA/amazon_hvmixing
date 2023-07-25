@@ -3,7 +3,8 @@ track_period: '20140401.0000_20140430.0000'
 # Raw wrfout directory
 wrfout_dir: "/pscratch/sd/s/smhagos/HVMIXINGSC/SIMULATIONS/CONTROLRUN/RAW/"
 # 3D data directory
-data_dir: "/pscratch/sd/s/smhagos/HVMIXINGSC/SIMULATIONS/regridded/CONTROLRUN/"
+# data_dir: "/pscratch/sd/s/smhagos/HVMIXINGSC/SIMULATIONS/regridded/CONTROLRUN/"
+data_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/CONTROLRUN/regrid/"
 # MCS mask data directory
 mcsmask_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/CONTROLRUN/TRACK_DIR_REGRID/mcstracking_native/"
 # MCS track statistics file
@@ -15,7 +16,8 @@ output_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/CONTROLRUN/TRACK_DIR_
 # MCS track statistics file basename
 statsfile_basename: "mcs_tracks_final_"
 mcsmask_basename: "mcstrack_"
-data_basename: "wrfreg_W_LH_"
+# data_basename: "wrfreg_W_LH_"
+data_basename: "wrfreg_"
 wrfout_basename: "wrfout_d01_"
 outputfile_basename: "mcs_tracks_"
 # W threshold to define updraft/downdraft core
@@ -33,6 +35,6 @@ min_core_npix: 4
 ncores_min: 5
 # Dask workers and threads
 run_parallel: 1
-n_workers: 64
+n_workers: 32
 threads_per_worker: 1
 dask_tmp_dir: '/tmp'

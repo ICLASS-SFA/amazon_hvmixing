@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH -A m1657
+#SBATCH -J CTL
+#SBATCH -t 00:15:00
+#SBATCH -q regular
+#SBATCH -C cpu
+#SBATCH --nodes=22
+#SBATCH --ntasks-per-node=128
+#SBATCH --exclusive
+#SBATCH --output=log_regrid_ctl.log
+#SBATCH --mail-type=END
+#SBATCH --mail-user=zhe.feng@pnnl.gov
+
+date
+module load taskfarmer
+
+# Run this command to generate process list:
+# ls -1 $PWD/wrfout_d01_*  | awk '{print "/global/homes/f/feng045/program/iclass/re2/amazon_hvmixing/regrid_wrf/run_regrid.sh", $1, "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/CONTROLRUN/regrid/"}' > tasklist_regrid_ctl
+
+export THREADS=32
+cd /global/homes/f/feng045/program/iclass/re2/amazon_hvmixing/regrid_wrf
+runcommands.sh tasklist_regrid_ctl
+date

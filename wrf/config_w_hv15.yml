@@ -1,21 +1,23 @@
 ---
 track_period: '20140401.0000_20140430.0000'
 # Raw wrfout directory
-wrfout_dir: "/pscratch/sd/s/smhagos/HVMIXINGSC/SIMULATIONS/HVMIXINGRUN10/RAW/"
+wrfout_dir: "/pscratch/sd/s/smhagos/HVMIXINGSC/SIMULATIONS/HVMIXINGRUN15/RAW/"
 # 3D data directory
-data_dir: "/pscratch/sd/s/smhagos/HVMIXINGSC/SIMULATIONS/regridded/HVMIXINGRUN10/"
+# data_dir: "/pscratch/sd/s/smhagos/HVMIXINGSC/SIMULATIONS/regridded/HVMIXINGRUN15/"
+data_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/HVMIXINGRUN15/regrid/"
 # MCS mask data directory
-mcsmask_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/HVMIXINGRUN10/TRACK_DIR_REGRID/mcstracking_native/"
+mcsmask_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/HVMIXINGRUN15/TRACK_DIR_REGRID/mcstracking_native/"
 # MCS track statistics file
-mcsstats_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/HVMIXINGRUN10/TRACK_DIR_REGRID/stats/"
+mcsstats_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/HVMIXINGRUN15/TRACK_DIR_REGRID/stats/"
 # Output file directory
-output_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/HVMIXINGRUN10/TRACK_DIR_REGRID/stats/"
+output_dir: "/pscratch/sd/f/feng045/iclass/amazon_hvmixing/HVMIXINGRUN15/TRACK_DIR_REGRID/stats/"
 # Environmental file directory
 # envs_dir: "/pscratch/sd/f/feng045/HyperFACETS/sgp_flood/wrf_ext/ctl/envs/"
 # MCS track statistics file basename
 statsfile_basename: "mcs_tracks_final_"
 mcsmask_basename: "mcstrack_"
-data_basename: "wrfreg_W_LH_"
+# data_basename: "wrfreg_W_LH_"
+data_basename: "wrfreg_"
 wrfout_basename: "wrfout_d01_"
 outputfile_basename: "mcs_tracks_"
 # W threshold to define updraft/downdraft core

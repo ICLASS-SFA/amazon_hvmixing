@@ -1,5 +1,5 @@
 """
-Calculate W vertical profile statistics within each MCS and 
+Calculate W vertical profile statistics within each MCS from pre-processed WRF data on HAMSL and 
 saves the output matching MCS tracks to a netCDF file.
 """
 __author__ = "Zhe.Feng@pnnl.gov"
@@ -12,6 +12,7 @@ import sys, os
 import time
 import yaml
 from scipy import ndimage
+from scipy.ndimage import generate_binary_structure, binary_dilation, iterate_structure
 import warnings
 import dask
 from dask.distributed import Client, LocalCluster
@@ -112,8 +113,15 @@ def calc_w_prof(
     # Get thresholds from config
     W_up_thresh = config['W_up_thresh']
     W_down_thresh = config['W_down_thresh']
+    Q_up_thresh = config['Q_up_thresh']
     min_core_npix = config['min_core_npix']
     ncores_min = config['ncores_min']
+
+    # Ideal gas constants
+    R_dry = 287.058   # [J kg−1 K−1] gas constant for dry air
+    R_v = 461         # [J K-1 kg-1] gas constant for water vapor
+    Cp_dry = 1005.7   # [J kg-1 K-1] specific heat capacity for dry air 
+    Epsilon = R_dry / R_v
 
     # Read MCS mask
     dsm = xr.open_dataset(filename_mcsmask)
@@ -132,18 +140,6 @@ def calc_w_prof(
     mcs_tracknumbers = dsm['cloudtracknumber'].squeeze()
     # Get 3D variables
     nz = dsw.sizes['height']
-    height = dsw['height']
-    WA = dsw['W'].squeeze().load()
-    DX = dsw.attrs['DX']
-    DY = dsw.attrs['DY']
-    grid_area = DX * DY / 1e6   # [km^2]
-
-    # Calculate moist air density using virtual temperature
-    R_dry = 287.058   # J kg−1 K−1
-    Rho = 100 * dsw['P'] / (R_dry * dsw['TV'])  # kg m-3
-
-    # Calculate mass flux (kg m-2 s-1)
-    MassFlux = (Rho * WA).squeeze().load()
 
     # MCS track numbers in mask file is shifted by 1
     track_numbers = idx_track + 1
@@ -155,6 +151,20 @@ def calc_w_prof(
     nmatchmcs = len(idx_track)
     if (nmatchmcs > 0):
 
+        # Get WRF variables
+        DX = dsw.attrs['DX']
+        DY = dsw.attrs['DY']
+        grid_area = DX * DY / 1e6   # [km^2]
+
+        PRESSURE = dsw['P'].squeeze()
+        TH = dsw['THETA'].squeeze()
+        TV = dsw['TV'].squeeze()
+        THETA_E = dsw['THETA_E'].squeeze()
+        QV = dsw['QVAPOR'].squeeze()
+        QCLOUD = dsw['QCLOUD'].squeeze()
+        # QT = dsw['QTOTAL'].squeeze()
+        WA = dsw['W'].squeeze()
+
         # Make array to store output
         dims2d = (nmatchmcs, nz)
         dims3d = (nmatchmcs, nz, ncores_min)
@@ -163,6 +173,11 @@ def calc_w_prof(
         CoreArea_up = np.full(dims3d, np.NaN, dtype=np.float32)
         CoreMaxW_up = np.full(dims3d, np.NaN, dtype=np.float32)
         CoreMeanW_up = np.full(dims3d, np.NaN, dtype=np.float32)
+        CoreThtvMax_up = np.full(dims3d, np.NaN, dtype=np.float32)
+        CoreThtvMean_prm = np.full(dims3d, np.NaN, dtype=np.float32)
+        CoreBuoyThtv_up = np.full(dims3d, np.NaN, dtype=np.float32)
+        CoreThteMax_up = np.full(dims3d, np.NaN, dtype=np.float32)
+        CoreThteMean_up = np.full(dims3d, np.NaN, dtype=np.float32)
 
         nCore_down = np.full(dims2d, np.NaN, dtype=np.float32)
         MassFlux_down = np.full(dims2d, np.NaN, dtype=np.float32)
@@ -182,34 +197,131 @@ def calc_w_prof(
             inpix_cloud = np.count_nonzero(mcsmask)
             if inpix_cloud > 0:
 
-                # Subset 3D variables to the current mask
-                # iW = WA.where(mcsmask == True)
-                iW = WA.where(mcsmask == True, drop=True).squeeze().data
-                iMassFlux = MassFlux.where(mcsmask == True, drop=True).squeeze().data
-                # import pdb; pdb.set_trace()
-
                 # Calculate statistics
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", category=RuntimeWarning)
+                    warnings.simplefilter("ignore", category=UserWarning)
 
-                    # Proceed if subsetted iW dimension is 3
-                    if iW.ndim == 3:
+                    # Subset 3D variables to the current mask
+                    iPRESSURE = PRESSURE.where(mcsmask == True, drop=True).squeeze().data
+
+                    # Proceed if subsetted variable dimension is 3D
+                    if iPRESSURE.ndim == 3:
+
+                        iW = WA.where(mcsmask == True, drop=True).squeeze().data
+                        iTH = TH.where(mcsmask == True, drop=True).squeeze().data
+                        iTV = TV.where(mcsmask == True, drop=True).squeeze().data
+                        iThte = THETA_E.where(mcsmask == True, drop=True).squeeze().data
+                        iQV = QV.where(mcsmask == True, drop=True).squeeze().data
+                        iQCLOUD = QCLOUD.where(mcsmask == True, drop=True).squeeze().data
+                        # iQT = QT.where(mcsmask == True, drop=True).squeeze().data
+                        
+                        # Moist air density [kg m-3]
+                        iRho = iPRESSURE / (R_dry * iTV)
+                        # Mass flux (kg m-2 s-1)
+                        iMassFlux = (iRho * iW).squeeze()
+                        
+                        # Calculate Virtual Potential Temperature
+                        iThtv = iTH * (iQV + 0.622)/(0.622 * (1 + iQV))
+
+                        # # Vapor pressure [Pa]
+                        # VaporP = iPRESSURE * iQV / (Epsilon + iQV)
+                        # # Calculate air temperature (AMS)
+                        # iTK = iTH * (iPRESSURE / 1000)**(2/7) # Remember that PRESSURE is in hPa
+                        # # Dry air temperature [K]
+                        # iTK = iTH * (1e5 / (iPRESSURE - VaporP)) ** (- R_dry / Cp_dry)
+
+                        # # Calculate Density Temperature (Eqn. 4.3.6 of some Emanuel textbook)
+                        # # "Note that Tv is a special case of Trho, since when condensed water is absent rT = r."
+                        # iTrho = iTK * (1 + iQV / 0.622) / (1 + iQT)
+                        # import pdb; pdb.set_trace()
+
                         # Loop over vertical level
                         for z in range(0, nz):
                             # print(height[z])
                             zW = iW[z,:,:]
+                            zQCLOUD = iQCLOUD[z,:,:]
                             zMassFlux = iMassFlux[z,:,:]
+                            zThtv = iThtv[z,:,:]
+                            zThte = iThte[z,:,:]
 
                             # Proceed if max(W) > threshold
                             if np.nanmax(zW) > W_up_thresh:
 
+                                # Cloudy updrafts
+                                zWcloud = (zW > W_up_thresh) & (zQCLOUD > Q_up_thresh)
+                                # Make cloudy updraft mask
+                                zW_mask = np.zeros_like(zW)
+                                zW_mask[zWcloud == True] = 1
+
                                 # Label updraft cores
-                                dict_up = label_cores(zW, W_up_thresh, ncores_min, min_core_npix, method='>')
+                                dict_up = label_cores(zW * zW_mask, W_up_thresh, ncores_min, min_core_npix, method='>')
                                 ncores_all_up = dict_up['ncores_all']
                                 ncores_up = dict_up['ncores_save']
                                 core_npix_up = dict_up['core_npix']
                                 core_numbers_up = dict_up['core_numbers']
                                 core_label_up = dict_up['core_label']
+
+                                # Get the min number of cores to save
+                                ncores_save_up = min([ncores_up, ncores_min])
+
+                                # Dilate core labels
+                                struct = generate_binary_structure(2, 2)
+                                # Make dilation mask arrays             
+                                # core_label_up_dil = np.zeros_like(core_label_up)
+                                core_label_up_prm = np.zeros_like(core_label_up)
+                                for ii in range(ncores_save_up):
+                                    cell = np.zeros_like(core_label_up)
+                                    cell[core_label_up == core_numbers_up[ii]] = 1
+                                    dil = binary_dilation(cell, structure=struct, iterations=1)
+                                    # core_label_up_dil[dil == 1] = core_numbers_up[ii] 
+                                    core_label_up_prm[(dil - cell) == 1] = core_numbers_up[ii]
+
+                                # if (ncores_save_up > 3):
+                                #     if np.nanmax(core_npix_up) > 20:
+                                #         import matplotlib.pyplot as plt
+                                #         import pdb; pdb.set_trace()
+
+                                # Total number of cores
+                                nCore_up[itrack, z] = ncores_all_up
+
+                                # Calculate core statistics
+                                W_max_up = np.full(ncores_save_up, np.NaN, dtype=np.float32)
+                                W_mean_up = np.full(ncores_save_up, np.NaN, dtype=np.float32)
+                                Thtv_max_up = np.full(ncores_save_up, np.NaN, dtype=np.float32)
+                                Thtv_mean_prm = np.full(ncores_save_up, np.NaN, dtype=np.float32)
+                                Buoy_Thtv_up = np.full(ncores_save_up, np.NaN, dtype=np.float32)
+                                Thte_max_up = np.full(ncores_save_up, np.NaN, dtype=np.float32)
+                                Thte_mean_up = np.full(ncores_save_up, np.NaN, dtype=np.float32)
+
+                                for ii in range(ncores_save_up):
+                                    # MaFlx_sum_up[ii] = np.nansum(zMassFlux[core_label_up == core_numbers_up[ii]])
+                                    W_max_up[ii] = np.nanmax(zW[core_label_up == core_numbers_up[ii]])
+                                    W_mean_up[ii] = np.nanmean(zW[core_label_up == core_numbers_up[ii]])
+                                    Thtv_max_up[ii] = np.nanmax(zThtv[core_label_up == core_numbers_up[ii]])
+                                    Thtv_mean_prm[ii] = np.nanmean(zThtv[core_label_up_prm == core_numbers_up[ii]])
+                                    Buoy_Thtv_up[ii] = 9.81*(Thtv_max_up[ii]-Thtv_mean_prm[ii])/Thtv_mean_prm[ii]
+                                    Thte_max_up[ii] = np.nanmax(zThte[core_label_up == core_numbers_up[ii]])
+                                    Thte_mean_up[ii] = np.nanmean(zThte[core_label_up == core_numbers_up[ii]])
+                                # Calculate total mass flux for all labeled cores
+                                MaFlx_sum_up = np.nansum(zMassFlux[core_label_up > 0])
+
+                                # Save data to output arrays
+                                # ncores_save_up = min([ncores_up, ncores_min])
+                                MassFlux_up[itrack, z] = MaFlx_sum_up * DX * DY
+                                # MassFlux_up[itrack, z, 0:ncores_save_up] = MaFlx_sum_up[0:ncores_save_up] * DX * DY
+                                CoreArea_up[itrack, z, 0:ncores_save_up] = core_npix_up[0:ncores_save_up] * grid_area
+                                CoreMaxW_up[itrack, z, 0:ncores_save_up] = W_max_up[0:ncores_save_up]
+                                CoreMeanW_up[itrack, z, 0:ncores_save_up] = W_mean_up[0:ncores_save_up]
+                                CoreThtvMax_up[itrack, z, 0:ncores_save_up] = Thtv_max_up[0:ncores_save_up]
+                                CoreThtvMean_prm[itrack, z, 0:ncores_save_up] = Thtv_mean_prm[0:ncores_save_up]
+                                CoreBuoyThtv_up[itrack, z, 0:ncores_save_up] = Buoy_Thtv_up[0:ncores_save_up]
+                                CoreThteMax_up[itrack, z, 0:ncores_save_up] = Thte_max_up[0:ncores_save_up]
+                                CoreThteMean_up[itrack, z, 0:ncores_save_up] = Thte_mean_up[0:ncores_save_up]
+
+
+                            # Proceed if min(W) < threshold
+                            if np.nanmin(zW) < W_down_thresh:
                                 # Label downdraft cores
                                 dict_down = label_cores(zW, W_down_thresh, ncores_min, min_core_npix, method='<')
                                 ncores_all_down = dict_down['ncores_all']
@@ -219,36 +331,25 @@ def calc_w_prof(
                                 core_label_down = dict_down['core_label']
 
                                 # Total number of cores
-                                nCore_up[itrack, z] = ncores_all_up
                                 nCore_down[itrack, z] = ncores_all_down
 
                                 # Calculate core statistics
-                                # MaFlx_sum_up = np.full(ncores_up, np.NaN, dtype=np.float32)
-                                W_max_up = np.full(ncores_up, np.NaN, dtype=np.float32)
-                                W_mean_up = np.full(ncores_up, np.NaN, dtype=np.float32)
-                                for ii in range(ncores_up):
-                                    # MaFlx_sum_up[ii] = np.nansum(zMassFlux[core_label_up == core_numbers_up[ii]])
-                                    W_max_up[ii] = np.nanmax(zW[core_label_up == core_numbers_up[ii]])
-                                    W_mean_up[ii] = np.nanmean(zW[core_label_up == core_numbers_up[ii]])
-                                # Calculate total mass flux for all labeled cores
-                                MaFlx_sum_up = np.nansum(zMassFlux[core_label_up > 0])
-
                                 W_min_down = np.full(ncores_down, np.NaN, dtype=np.float32)
                                 W_mean_down = np.full(ncores_down, np.NaN, dtype=np.float32)
+                                # Thtv_min_down = np.full(ncores_down, np.NaN, dtype=np.float32)
+                                # Thtv_mean_prm = np.full(ncores_down, np.NaN, dtype=np.float32)
+                                # Buoy_Thtv_down = np.full(ncores_down, np.NaN, dtype=np.float32)
+
                                 for ii in range(ncores_down):
                                     W_min_down[ii] = np.nanmin(zW[core_label_down == core_numbers_down[ii]])
                                     W_mean_down[ii] = np.nanmean(zW[core_label_down == core_numbers_down[ii]])
+                                    # Thtv_min_down[ii] = np.nanmin(zThtv[core_label_down == core_numbers_down[ii]])
+                                    # Thtv_mean_prm[ii] = np.nanmean(zThtv[core_label_down_prm == core_numbers_down[ii]])
+                                    # Buoy_Thtv_down[ii] = 9.81*(Thtv_min_down[ii]-Thtv_mean_prm[ii])/Thtv_mean_prm[ii]
                                 # Calculate total mass flux for all labeled cores
                                 MaFlx_sum_down = np.nansum(zMassFlux[core_label_down > 0])
 
                                 # Save data to output arrays
-                                ncores_save_up = min([ncores_up, ncores_min])
-                                MassFlux_up[itrack, z] = MaFlx_sum_up * DX * DY
-                                # MassFlux_up[itrack, z, 0:ncores_save_up] = MaFlx_sum_up[0:ncores_save_up] * DX * DY
-                                CoreArea_up[itrack, z, 0:ncores_save_up] = core_npix_up[0:ncores_save_up] * grid_area
-                                CoreMaxW_up[itrack, z, 0:ncores_save_up] = W_max_up[0:ncores_save_up]
-                                CoreMeanW_up[itrack, z, 0:ncores_save_up] = W_mean_up[0:ncores_save_up]
-
                                 ncores_save_down = min([ncores_down, ncores_min])
                                 MassFlux_down[itrack, z] = MaFlx_sum_down * DX * DY
                                 CoreArea_down[itrack, z, 0:ncores_save_down] = core_npix_down[0:ncores_save_down] * grid_area
@@ -262,6 +363,11 @@ def calc_w_prof(
             'CoreMaxW_up': CoreMaxW_up,
             'CoreMeanW_up': CoreMeanW_up,
             'MassFlux_up': MassFlux_up,
+            'CoreThteMax_up': CoreThteMax_up,
+            'CoreThteMean_up': CoreThteMean_up,
+            'CoreThtvMax_up': CoreThtvMax_up,
+            'CoreThtvMean_prm': CoreThtvMean_prm,
+            'CoreBuoyThtv_up': CoreBuoyThtv_up,
 
             'nCore_down': nCore_down,
             'CoreArea_down': CoreArea_down,
@@ -290,6 +396,26 @@ def calc_w_prof(
             'CoreMeanW_up': {
                 'long_name': 'Updraft core mean W',
                 'units': 'm/s',
+            },
+            'CoreThteMax_up': {
+                'long_name': 'Updraft core max Theta e',
+                'units': 'K',
+            },
+            'CoreThteMean_up': {
+                'long_name': 'Updraft core mean Theta e',
+                'units': 'K',
+            },
+            'CoreThtvMax_up': {
+                'long_name': 'Updraft core max Theta v',
+                'units': 'K',
+            },
+            'CoreThtvMean_prm': {
+                'long_name': 'Updraft core perimeter mean Theta v',
+                'units': 'K',
+            },
+            'CoreBuoyThtv_up': {
+                'long_name': 'Updraft core Buoyancy based on Theta v',
+                'units': 'm s^-2',
             },
             # Downdraft
             'nCore_down': {
@@ -320,8 +446,13 @@ def calc_w_prof(
 
 def main():
 
-    # Get configuration file name from input
-    config_file = sys.argv[1]
+    # Get the number of command line arguments
+    nargs = len(sys.argv)
+    if nargs == 2:
+        config_file = sys.argv[1]
+    elif nargs == 3:
+        config_file = sys.argv[1]
+        scheduler_file = sys.argv[2]
 
     # Get inputs from configuration file
     stream = open(config_file, 'r')
@@ -382,6 +513,10 @@ def main():
         dask.config.set({'temporary-directory': dask_tmp_dir})
         cluster = LocalCluster(n_workers=n_workers, threads_per_worker=threads_per_worker)
         client = Client(cluster)
+    if run_parallel == 2:
+        # Dask-MPI
+        # scheduler_file = os.path.join(os.environ["SCRATCH"], "scheduler.json")
+        client = Client(scheduler_file=scheduler_file)
 
     # Loop over each MCS mask file
     for ifile in range(nfiles):
@@ -409,7 +544,7 @@ def main():
                     config,
                 )
             # Parallel
-            elif run_parallel == 1:
+            elif run_parallel >= 1:
                 result = dask.delayed(calc_w_prof)(
                     filename_mcsmask, 
                     filename_data,                  
@@ -418,7 +553,7 @@ def main():
             )
             results.append(result)
     
-    if run_parallel == 1:
+    if run_parallel >= 1:
         # Trigger Dask computation
         print("Computing statistics ...")
         final_results = dask.compute(*results)

@@ -12,11 +12,15 @@ if __name__ == '__main__':
     outdir = str(sys.argv[2])
 
     # Set file directories
-    outbasename = 'wrfreg_W_LH_'
+    outbasename = 'wrfreg_'
 
     # Define regrid vertical levels
-    lev = np.arange(0.5, 20.0, 0.5)
-
+    # lev = np.arange(0.5, 18.0, 0.5)
+    # lev = np.arange(0.25, 18.0, 0.25)
+    lev_low = np.arange(0.25, 6.01, 0.25)
+    lev_hi = np.arange(6.5, 18.01, 0.5)
+    lev = np.concatenate((lev_low, lev_hi))
+    
     # Create output directory
     os.makedirs(outdir, exist_ok=True)
 
@@ -68,20 +72,26 @@ if __name__ == '__main__':
     # dbz_reg = 10.0 * np.log10(refl_reg)
 
     # Microphysics variables
-    # QRAIN = getvar(ncfile, 'QRAIN')
+    QVAPOR = getvar(ncfile, 'QVAPOR')
+    QVAPOR_reg = vinterp(ncfile, field=QVAPOR, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
+
+    QRAIN = getvar(ncfile, 'QRAIN')
     # QRAIN_reg = vinterp(ncfile, field=QRAIN, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
-    # QGRAUP = getvar(ncfile, 'QGRAUP')
+    QGRAUP = getvar(ncfile, 'QGRAUP')
     # QGRAUP_reg = vinterp(ncfile, field=QGRAUP, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
-    # QSNOW = getvar(ncfile, 'QSNOW')
+    QSNOW = getvar(ncfile, 'QSNOW')
     # QSNOW_reg = vinterp(ncfile, field=QSNOW, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
-    # QCLOUD = getvar(ncfile, 'QCLOUD')
-    # QCLOUD_reg = vinterp(ncfile, field=QCLOUD, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
-    # QICE = getvar(ncfile, 'QICE')
+    QCLOUD = getvar(ncfile, 'QCLOUD')
+    QCLOUD_reg = vinterp(ncfile, field=QCLOUD, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
+    QICE = getvar(ncfile, 'QICE')
     # QICE_reg = vinterp(ncfile, field=QICE, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
     # QNRAIN = getvar(ncfile, 'QNRAIN')
     # QNRAIN_reg = vinterp(ncfile, field=QNRAIN, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
     # QNICE = getvar(ncfile, 'QNICE')
     # QNICE_reg = vinterp(ncfile, field=QNICE, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
+    QTOTAL = QVAPOR + QRAIN + QGRAUP + QSNOW + QCLOUD + QICE
+    QTOTAL_reg = vinterp(ncfile, field=QTOTAL, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
+    # import pdb; pdb.set_trace()
 
     # Interpolate variables
     wa = getvar(ncfile, 'wa')
@@ -91,11 +101,17 @@ if __name__ == '__main__':
     # # Convert reflectivity to linear unit
     # heating_reg = vinterp(ncfile, field=heating, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
 
+    th = getvar(ncfile, 'th')
+    th_reg = vinterp(ncfile, field=th, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
+
     tv = getvar(ncfile, 'tv')
     tv_reg = vinterp(ncfile, field=tv, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
 
     pressure = getvar(ncfile, 'pressure')
     p_reg = vinterp(ncfile, field=pressure, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
+
+    theta_e = getvar(ncfile, 'theta_e')
+    theta_e_reg = vinterp(ncfile, field=theta_e, vert_coord='ght_msl', interp_levels=lev, extrapolate=False)
 
 
     # Remove attributes ('projection' in particular conflicts with Xarray)
@@ -108,29 +124,37 @@ if __name__ == '__main__':
         # QRAIN_reg.attrs.pop(key, None)
         # QGRAUP_reg.attrs.pop(key, None)
         # QSNOW_reg.attrs.pop(key, None)
-        # QCLOUD_reg.attrs.pop(key, None)
+        QCLOUD_reg.attrs.pop(key, None)
         # QICE_reg.attrs.pop(key, None)
         # QNRAIN_reg.attrs.pop(key, None)
         # QNICE_reg.attrs.pop(key, None)
+        QVAPOR_reg.attrs.pop(key, None)
+        QTOTAL_reg.attrs.pop(key, None)
+        th_reg.attrs.pop(key, None)
         tv_reg.attrs.pop(key, None)
         p_reg.attrs.pop(key, None)
+        theta_e_reg.attrs.pop(key, None)
 
-
+    dim4d = ['time', 'height', 'lat', 'lon']
     var_dict = {
         'base_time': (['time'], btarr), \
         'lon2d': (['lat', 'lon'], XLONG.data, XLONG.attrs),
         'lat2d': (['lat', 'lon'], XLAT.data, XLAT.attrs),
-        'W': (['time', 'height', 'lat', 'lon'], W_reg.expand_dims('time', axis=0).data, W_reg.attrs),
-        # 'LH': (['time', 'height', 'lat', 'lon'], heating_reg.expand_dims('time', axis=0).data, heating_reg.attrs),
-        # 'QRAIN': (['time', 'height', 'lat', 'lon'], QRAIN_reg.expand_dims('time', axis=0).data, QRAIN_reg.attrs),
-        # 'QGRAUP': (['time', 'height', 'lat', 'lon'], QGRAUP_reg.expand_dims('time', axis=0).data, QGRAUP_reg.attrs),
-        # 'QSNOW': (['time', 'height', 'lat', 'lon'], QSNOW_reg.expand_dims('time', axis=0).data, QSNOW_reg.attrs),
-        # 'QCLOUD': (['time', 'height', 'lat', 'lon'], QCLOUD_reg.expand_dims('time', axis=0).data, QCLOUD_reg.attrs),
-        # 'QICE': (['time', 'height', 'lat', 'lon'], QICE_reg.expand_dims('time', axis=0).data, QICE_reg.attrs),
-        # 'QNRAIN': (['time', 'height', 'lat', 'lon'], QNRAIN_reg.expand_dims('time', axis=0).data, QNRAIN_reg.attrs),
-        # 'QNICE': (['time', 'height', 'lat', 'lon'], QNICE_reg.expand_dims('time', axis=0).data, QNICE_reg.attrs),
-        'TV': (['time', 'height', 'lat', 'lon'], tv_reg.expand_dims('time', axis=0).data, tv_reg.attrs),
-        'P': (['time', 'height', 'lat', 'lon'], p_reg.expand_dims('time', axis=0).data, p_reg.attrs),
+        'W': (dim4d, W_reg.expand_dims('time', axis=0).data, W_reg.attrs),
+        # 'LH': (dim4d, heating_reg.expand_dims('time', axis=0).data, heating_reg.attrs),
+        # 'QRAIN': (dim4d, QRAIN_reg.expand_dims('time', axis=0).data, QRAIN_reg.attrs),
+        # 'QGRAUP': (dim4d, QGRAUP_reg.expand_dims('time', axis=0).data, QGRAUP_reg.attrs),
+        # 'QSNOW': (dim4d, QSNOW_reg.expand_dims('time', axis=0).data, QSNOW_reg.attrs),
+        'QCLOUD': (dim4d, QCLOUD_reg.expand_dims('time', axis=0).data, QCLOUD_reg.attrs),
+        # 'QICE': (dim4d, QICE_reg.expand_dims('time', axis=0).data, QICE_reg.attrs),
+        # 'QNRAIN': (dim4d, QNRAIN_reg.expand_dims('time', axis=0).data, QNRAIN_reg.attrs),
+        # 'QNICE': (dim4d, QNICE_reg.expand_dims('time', axis=0).data, QNICE_reg.attrs),
+        'QVAPOR': (dim4d, QVAPOR_reg.expand_dims('time', axis=0).data, QVAPOR_reg.attrs),
+        'QTOTAL': (dim4d, QTOTAL_reg.expand_dims('time', axis=0).data, QTOTAL_reg.attrs),
+        'THETA': (dim4d, th_reg.expand_dims('time', axis=0).data, th_reg.attrs),
+        'TV': (dim4d, tv_reg.expand_dims('time', axis=0).data, tv_reg.attrs),
+        'P': (dim4d, p_reg.expand_dims('time', axis=0).data, p_reg.attrs),
+        'THETA_E': (dim4d, theta_e_reg.expand_dims('time', axis=0).data, theta_e_reg.attrs),
     }
     coord_dict = {
         'time': (['time'], btarr),
@@ -155,6 +179,8 @@ if __name__ == '__main__':
     dsout['time'].attrs['units'] = 'seconds since 1970-01-01 00:00:00'
     dsout['height'].attrs['long_name'] = 'Height above mean sea level'
     dsout['height'].attrs['units'] = 'km'
+    dsout['QTOTAL'].attrs['long_name'] = 'Total water mixing ratio'
+    dsout['QTOTAL'].attrs['units'] = 'kg kg-1'
     # dsout.Times.attrs['long_name'] = 'WRF-based time'
     # dsout.lon2d.attrs['long_name'] = 'Longitude'
     # dsout.lon2d.attrs['units'] = 'degrees_east'
